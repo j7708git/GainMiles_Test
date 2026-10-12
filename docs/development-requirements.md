@@ -160,7 +160,7 @@ POST 與 PUT 全部七欄必填。id 是伺服器給定唯讀欄位，不出現�
 
 ## 6. REST 端點與行為
 
-全部位於 `/api/v1`；id 是 >0 整數；所有有內容的回應 Content-Type application/json。
+全部位於 `/api/v1`；id 是 1–2147483647 的整數（對齊資料庫 INTEGER），超限回 422；所有有內容的回應 Content-Type application/json。
 
 | 方法／路徑 | 行為 | 成功 | 失敗 |
 | --- | --- | --- | --- |
