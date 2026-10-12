@@ -8,6 +8,7 @@ The only literal password is the ``change-me`` placeholder documented in
 
 from __future__ import annotations
 
+import re
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -15,6 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+import yaml
 from sqlalchemy.engine import URL
 
 import setup_env
@@ -27,6 +29,11 @@ from app.config import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+COMPOSE_PATH = PROJECT_ROOT / "compose.yaml"
+
+# Matches a Compose/container variable reference such as ${POSTGRES_DB} (also
+# inside the escaped ``$${POSTGRES_DB}`` form used in healthchecks).
+_ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def rand_password() -> str:
@@ -303,3 +310,83 @@ def test_alembic_url_is_percent_escaped_roundtrip() -> None:
     config = Config()
     config.set_main_option("sqlalchemy.url", escape_config_value(url))
     assert config.get_main_option("sqlalchemy.url") == url
+
+
+# --- compose configuration consistency --------------------------------------
+
+
+def _healthcheck_env_references(service: dict) -> set[str]:
+    """POSTGRES_* variables referenced by a service healthcheck command."""
+    healthcheck = service.get("healthcheck") or {}
+    command = healthcheck.get("test")
+    if not command:
+        return set()
+    text = " ".join(command) if isinstance(command, list) else str(command)
+    return {
+        name for name in _ENV_REFERENCE.findall(text) if name.startswith("POSTGRES_")
+    }
+
+
+def _service_environment_keys(service: dict) -> set[str]:
+    """Keys declared in a service's ``environment`` block."""
+    environment = service.get("environment") or {}
+    if isinstance(environment, dict):
+        return set(environment)
+    return {entry.split("=", 1)[0] for entry in environment}
+
+
+def _undefined_healthcheck_env(compose: dict) -> dict[str, set[str]]:
+    """Report services whose healthcheck uses POSTGRES_* vars they don't define.
+
+    These variables are expanded by the container shell, so they must exist in
+    that same service's ``environment``. Comparing names (not interpolated
+    values) keeps this meaningful without needing a Docker daemon and without
+    reading or printing any expanded credential.
+    """
+    problems: dict[str, set[str]] = {}
+    for name, service in (compose.get("services") or {}).items():
+        missing = _healthcheck_env_references(service) - _service_environment_keys(service)
+        if missing:
+            problems[name] = missing
+    return problems
+
+
+def test_compose_healthchecks_only_reference_defined_service_env() -> None:
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+    problems = _undefined_healthcheck_env(compose)
+    assert problems == {}, f"healthchecks reference undefined env vars: {problems}"
+
+
+def test_healthcheck_env_consistency_checker_flags_old_variable() -> None:
+    # Regression: the pre-fix db_test healthcheck used ${POSTGRES_TEST_DB}, which
+    # is not part of the container environment (only POSTGRES_USER / _PASSWORD /
+    # _DB are). The checker must flag it.
+    buggy = {
+        "services": {
+            "db_test": {
+                "environment": {
+                    "POSTGRES_USER": "gainmiles",
+                    "POSTGRES_PASSWORD": "<generated>",
+                    "POSTGRES_DB": "gainmiles_test",
+                },
+                "healthcheck": {
+                    "test": [
+                        "CMD-SHELL",
+                        "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_TEST_DB}",
+                    ]
+                },
+            }
+        }
+    }
+    assert _undefined_healthcheck_env(buggy) == {"db_test": {"POSTGRES_TEST_DB"}}
+
+
+def test_compose_db_healthchecks_target_their_own_database() -> None:
+    # Beyond consistency: each database service must check the database it
+    # actually creates, via the container-expanded POSTGRES_DB.
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+    for name in ("db", "db_test"):
+        service = compose["services"][name]
+        text = " ".join(service["healthcheck"]["test"])
+        assert "pg_isready" in text
+        assert "POSTGRES_DB" in _healthcheck_env_references(service)

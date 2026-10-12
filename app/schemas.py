@@ -244,13 +244,30 @@ def json_safe(value: Any) -> Any:
     return str(value)
 
 
+def normalize_loc_part(part: Any) -> Any:
+    """Keep FastAPI's ``str``/``int`` location parts in their original type.
+
+    Pydantic uses strings for field names and integers for list indexes and
+    JSON offsets; turning every part into ``str`` would diverge from the
+    standard 422 detail array. Only exotic parts fall back to ``json_safe``.
+    """
+    if isinstance(part, (str, int)):
+        return part
+    return json_safe(part)
+
+
 def sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert FastAPI/Pydantic validation errors into JSON-safe dicts."""
+    """Convert FastAPI/Pydantic validation errors into JSON-safe dicts.
+
+    The shape matches FastAPI's standard error array, including the ``loc``
+    part types; only leaves that could break JSON serialisation (NaN/Infinity
+    ``input``, exception objects in ``ctx``) are rewritten.
+    """
     safe: list[dict[str, Any]] = []
     for error in errors:
         item: dict[str, Any] = {
             "type": json_safe(error.get("type")),
-            "loc": [str(part) for part in error.get("loc", ())],
+            "loc": [normalize_loc_part(part) for part in error.get("loc", ())],
             "msg": json_safe(error.get("msg")),
             "input": json_safe(error.get("input")),
         }

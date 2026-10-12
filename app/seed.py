@@ -90,7 +90,9 @@ def main() -> int:
         with factory() as session:
             created, skipped = seed(session)
     except RuntimeError as error:
-        print(f"seed failed: {error}")
+        # The type only: a RuntimeError message could later carry a target or
+        # credential, and the contract is that a failure prints no detail.
+        print(f"seed failed: {type(error).__name__}")
         return 1
     except SQLAlchemyError as error:
         # The exception name only: a driver message can echo the connection target.

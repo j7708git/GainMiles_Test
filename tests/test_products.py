@@ -9,6 +9,7 @@ the real application and handlers.
 from __future__ import annotations
 
 import json
+import secrets
 import threading
 from collections.abc import Callable, Iterator
 
@@ -19,6 +20,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import db as app_db
+from app import seed as seed_module
 from app.db import get_session
 from app.main import app
 from app.models import Product
@@ -475,6 +478,42 @@ def test_seed_does_not_overwrite_a_modified_product(
 
 def test_seed_returns_nothing_to_do_on_empty_database(client: TestClient) -> None:
     assert client.get(API).json()["total"] == 0
+
+
+def test_seed_main_prints_only_the_exception_type(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sentinel = f"sentinel-{secrets.token_urlsafe(16)}"
+
+    def unavailable() -> None:
+        raise RuntimeError(f"could not build the session factory: {sentinel}")
+
+    monkeypatch.setattr(app_db, "get_session_factory", unavailable)
+    exit_code = seed_module.main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+    assert "seed failed: RuntimeError" in captured.out
+
+
+def test_seed_main_hides_sqlalchemy_error_detail(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sentinel = f"sentinel-{secrets.token_urlsafe(16)}"
+
+    def unavailable() -> None:
+        raise OperationalError("SELECT 1", {}, Exception(sentinel))
+
+    monkeypatch.setattr(app_db, "get_session_factory", unavailable)
+    exit_code = seed_module.main()
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert sentinel not in captured.out
+    assert sentinel not in captured.err
+    assert "seed failed: OperationalError" in captured.out
 
 
 # --- concurrency -------------------------------------------------------------

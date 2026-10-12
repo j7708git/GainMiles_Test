@@ -311,6 +311,55 @@ def test_sanitize_validation_errors_is_json_serialisable() -> None:
     assert "nan" in rendered.lower()
 
 
+def test_sanitize_validation_errors_preserves_loc_types() -> None:
+    # Field names stay strings, list indexes stay integers (FastAPI's own
+    # standard detail array keeps them mixed the same way).
+    errors = [
+        {
+            "type": "string_type",
+            "loc": ("body", "sizes", 0),
+            "msg": "Input should be a valid string",
+            "input": 1,
+        }
+    ]
+    item = sanitize_validation_errors(errors)[0]
+    assert item["loc"] == ["body", "sizes", 0]
+    assert isinstance(item["loc"][2], int) and not isinstance(item["loc"][2], str)
+    assert json.dumps(item, allow_nan=False)
+
+
+def test_sanitize_validation_errors_sanitises_nan_but_keeps_loc() -> None:
+    errors = [
+        {
+            "type": "value_error",
+            "loc": ("body", "unit_price"),
+            "msg": "Value error, not finite",
+            "input": float("nan"),
+            "ctx": {"error": ValueError("boom")},
+        }
+    ]
+    item = sanitize_validation_errors(errors)[0]
+    assert item["loc"] == ["body", "unit_price"]
+    # Only the unsafe leaves are rewritten.
+    assert item["input"] == "nan"
+    assert item["ctx"] == {"error": "boom"}
+    json.dumps(item, allow_nan=False)
+
+
+def test_invalid_json_body_keeps_integer_offset_in_loc(client: TestClient) -> None:
+    response = client.post(
+        f"{API}",
+        content=b"{not json",
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["type"] == "json_invalid"
+    assert error["loc"][0] == "body"
+    assert isinstance(error["loc"][1], int) and not isinstance(error["loc"][1], str)
+    assert error["loc"][1] == 1
+
+
 # --- OpenAPI -----------------------------------------------------------------
 
 

@@ -32,7 +32,7 @@ Python app 容器化、分類／尺寸／顏色／商品碼精確篩選與三個
 - **設計假設**：單一分類、商品層價格總庫存、code 唯一且可修改；大小寫敏感；屬性可自行新增；無幣別、不推定為某個國家貨幣。
 - **未知**：截止時間、評分方的 API 既定格式、是否指定 Python/DB 版本、是否要 variant 級庫存。若之後出現外部規格，以規格為準，先更新本文件再寫程式。
 
-## 3. 架構與預定目錄
+## 3. 架構與目錄（可選項尚未建立）
 
 ```text
 GainMiles_Test/
@@ -42,7 +42,7 @@ GainMiles_Test/
 │   ├── technical-decisions.md
 │   ├── code-primary-key-alternative.md
 │   └── architecture.html
-├── app/                       # 以下皆預定，尚不存在
+├── app/                       # 基本 API 已實作；可選容器檔仍是設計項
 │   ├── main.py
 │   ├── config.py
 │   ├── db.py
@@ -56,6 +56,7 @@ GainMiles_Test/
 ├── alembic.ini
 ├── requirements.txt
 ├── requirements-dev.txt
+├── setup_env.py                # 純標準函式庫建立本機設定，不覆寫既有 .env
 ├── compose.yaml
 ├── Dockerfile                 # 可選
 ├── .dockerignore              # app 容器化時必備
@@ -194,31 +195,32 @@ DELETE 同一 id 第二次回 404；資料的最終狀態仍是不存在，符�
 
 可重複執行：只新增不存在的 code，**不覆寫已修改商品**；不刪資料。明示一批交易和重複 code 的處理。不要補「....」成假商品，也不自行按尺寸／顏色分配庫存。
 
-## 8. 預定啟動契約（目前不可執行，待實作驗證）
+## 8. 啟動契約（基本模式已實作；app 容器模式仍為設計）
 
 命令以程式碼根為基準；POSIX shell 示例。README 須寫清楚 Python 3.12、Docker Compose v2、可用埠、設定值與故障排除。要求完整文件，不要求兩套原始碼。
+
+基本模式的完整啟動、設定、測試與 curl 範例以 [README](../README.md) 為準；下列基本命令與實作一致。可選 app 容器模式未實作，不要把它當成目前可執行流程。
 
 ### 基本：本機 Python，DB Docker
 
 ```bash
-cp .env.example .env
-# 在 .env 自行填 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB / DATABASE_URL
-# DATABASE_URL 使用 localhost，密碼特殊字元需 URL encode
-docker compose up -d --wait db
+python3 setup_env.py
+# 第一次生成隨機密碼與兩個對齊的 URL；既有 .env 會拒絕覆寫，請保留
+docker compose -p gainmiles-test up -d --wait --wait-timeout 120 db
 python3.12 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 alembic upgrade head
 python -m app.seed
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8123
 ```
 
 app 設定需載入 `.env`，不要求使用者 source 任意 shell 檔。資料庫健康等待須有有限 timeout 和失敗訊息。一般本機不支援時可使用可選全 Docker 流程，不改系統 Python。
 
-### 加分：app 與 db Docker
+### 加分：app 與 db Docker（尚未實作，以下僅設計契約）
 
 ```bash
-cp .env.example .env
+python3 setup_env.py
 # 自行填入必要設定；Compose 覆寫 app DATABASE_URL，app 的連線主機為 db:5432
 docker compose up -d --wait db
 docker compose --profile app build app
@@ -231,13 +233,14 @@ app startup 不用 create_all；遷移失敗時不應繼續啟動。app profile 
 
 ### 驗證與停止
 
-API 互動文件預定 `http://localhost:8000/docs`，OpenAPI `/openapi.json`。
+API 範例埠為 8123，互動文件 `http://127.0.0.1:8123/docs`，OpenAPI `/openapi.json`。埠衝突可選其他埠，不終止既有服務。
 
 ```bash
-curl http://localhost:8000/api/v1/products
-# 先設定獨立 TEST_DATABASE_URL，pytest 不得對應用資料庫做清空
+curl http://127.0.0.1:8123/api/v1/products
+docker compose -p gainmiles-test --profile test up -d --wait --wait-timeout 120 db_test
+# setup_env.py 已設定專用 TEST_DATABASE_URL；pytest 不得對應用資料庫做清空
 pytest -q
-docker compose --profile app down
+docker compose -p gainmiles-test --profile test down
 ```
 
 本機 API 以 Ctrl+C 停止；Compose down 保留 named volume。不把 down -v 當正常停止步驟。測試資料庫需專用、具名稱與 URL 護欄；若 TEST_DATABASE_URL 缺失或與 DATABASE_URL 相同，測試停止，不清空商品資料。獨立測試 PostgreSQL 的完整建置命令須在 README 補齊。
@@ -268,7 +271,7 @@ docker compose --profile app down
 
 ## 10. 交付清單與安全
 
-- 原始碼、精確依賴、遷移、Compose、範例與測試、README、這兩份公開規格與架構圖。
+- 原始碼、精確依賴、遷移、Compose、範例與測試、README、公開規格與架構圖。
 - Dockerfile/app profile 只在確實完成並驗證後列入已支援。
 - AI 對話是題目要求的另外一份參考附件，預設私下提交給評分方，不因 GitHub public 就同步公開；交卷前檢查是否有個資或密鑰。
 - 若對話出現敏感資訊，不能秘密刪改後仍稱原始完整；先確認提交方式、明示遮罩與範圍。
