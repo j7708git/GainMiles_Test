@@ -1,0 +1,896 @@
+{
+  "info": {
+    "name": "GainMiles Product API",
+    "description": "REST collection for the **GainMiles Product API** (FastAPI + PostgreSQL).\n\n### 先決條件 (Prerequisites)\n1. `python setup_env.py`\n2. `docker compose -p gainmiles-test up -d --wait --wait-timeout 120 db`\n3. `alembic upgrade head`\n4. `python -m app.seed` *(可選，載入四筆範例商品)*\n5. `uvicorn app.main:app --host 127.0.0.1 --port 8123`\n\n### 設定 (Configuration)\n於環境變數 `baseUrl` 設定服務位址，預設為 `http://127.0.0.1:8123`。\n\n### 執行順序 (Run order)\n資料夾順序即為建議的執行順序。**Create** 會把伺服器指派的 `id` 存入 collection 變數 `productId`，後續的 Read / Update / Delete 會沿用；**Delete** 之後再讀取會得到 404。\n\n`unit_price` 一律以兩位小數字串回傳，`sizes` / `colors` 一律以排序後的陣列回傳。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "API Docs",
+      "description": "FastAPI 內建的 OpenAPI 文件與 Swagger UI。",
+      "item": [
+        {
+          "name": "OpenAPI document",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content type is JSON', function () {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "});",
+                  "",
+                  "pm.test('Lists both product paths', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.openapi).to.be.a('string');",
+                  "  pm.expect(body.paths).to.have.property('/api/v1/products');",
+                  "  pm.expect(body.paths).to.have.property('/api/v1/products/{product_id}');",
+                  "});",
+                  "",
+                  "pm.test('DocOperations for products are exposed', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.paths['/api/v1/products']).to.have.property('get');",
+                  "  pm.expect(body.paths['/api/v1/products']).to.have.property('post');",
+                  "  pm.expect(body.paths['/api/v1/products/{product_id}']).to.have.property('delete');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "openapi.json"
+              ]
+            },
+            "description": "OpenAPI 3 schema，用於匯入或檢查端點契約。"
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger UI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Serves an HTML page', function () {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "  pm.expect(pm.response.text()).to.include('swagger');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "docs"
+              ]
+            },
+            "description": "互動式 API 文件（瀏覽器開啟較合適）。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "description": "商品資源的 CRUD 與錯誤案例，全部位於 `/api/v1/products`。",
+      "item": [
+        {
+          "name": "Read",
+          "description": "列表查詢與分頁。",
+          "item": [
+            {
+              "name": "List products (defaults)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Response time is below 1000ms', function () {",
+                      "  pm.expect(pm.response.responseTime).to.be.below(1000);",
+                      "});",
+                      "",
+                      "pm.test('Returns a page envelope with default limit/offset', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body).to.have.all.keys('items', 'total', 'limit', 'offset');",
+                      "  pm.expect(body.items).to.be.an('array');",
+                      "  pm.expect(body.limit).to.eql(20);",
+                      "  pm.expect(body.offset).to.eql(0);",
+                      "  pm.expect(body.total).to.be.a('number');",
+                      "});",
+                      "",
+                      "pm.test('Items expose the eight product fields', function () {",
+                      "  const body = pm.response.json();",
+                      "  body.items.forEach(function (item) {",
+                      "    pm.expect(item).to.have.all.keys('id', 'name', 'code', 'category', 'sizes', 'unit_price', 'inventory', 'colors');",
+                      "    pm.expect(item.id).to.be.a('number');",
+                      "    pm.expect(item.sizes).to.be.an('array');",
+                      "    pm.expect(item.colors).to.be.an('array');",
+                      "    pm.expect(item.unit_price).to.match(/^\\d+\\.\\d{2}$/);",
+                      "  });",
+                      "});",
+                      "",
+                      "pm.test('Items are ordered by id ascending', function () {",
+                      "  const body = pm.response.json();",
+                      "  const ids = body.items.map(function (item) { return item.id; });",
+                      "  pm.expect(ids).to.eql(ids.slice().sort(function (a, b) { return a - b; }));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ]
+                },
+                "description": "列出商品（預設 `limit=20`、`offset=0`）。"
+              },
+              "response": []
+            },
+            {
+              "name": "List products (pagination)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Honours limit and offset', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.limit).to.eql(2);",
+                      "  pm.expect(body.offset).to.eql(0);",
+                      "  pm.expect(body.items.length).to.be.at.most(2);",
+                      "});",
+                      "",
+                      "pm.test('Stores the first id for later requests', function () {",
+                      "  const body = pm.response.json();",
+                      "  if (body.items.length > 0) {",
+                      "    pm.collectionVariables.set('productId', String(body.items[0].id));",
+                      "  }",
+                      "  pm.expect(body.items.length).to.be.at.least(0);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products?limit=2&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "2",
+                      "description": "1–100"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0",
+                      "description": "0–100000"
+                    }
+                  ]
+                },
+                "description": "分頁列表：`limit` 1–100、`offset` 0–100000。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Create",
+          "description": "新增商品。回應為 201，並在 `Location` 標頭帶出新資源路徑。",
+          "item": [
+            {
+              "name": "Create product (JSON arrays)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 201', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "",
+                      "pm.test('Location header points at the new product', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.response.to.have.header('Location');",
+                      "  pm.expect(pm.response.headers.get('Location')).to.eql('/api/v1/products/' + body.id);",
+                      "});",
+                      "",
+                      "pm.test('Echoes the submitted fields with normalised collections', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.id).to.be.above(0);",
+                      "  pm.expect(body.name).to.be.a('string').and.not.empty;",
+                      "  pm.expect(body.category).to.eql('cloth');",
+                      "  pm.expect(body.sizes).to.eql(['M', 'S']);",
+                      "  pm.expect(body.colors).to.eql(['Blue', 'Red']);",
+                      "  pm.expect(body.unit_price).to.eql('200.00');",
+                      "  pm.expect(body.inventory).to.eql(7);",
+                      "});",
+                      "",
+                      "pm.test('Stores the new id and code for later requests', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.collectionVariables.set('productId', String(body.id));",
+                      "  pm.collectionVariables.set('createdCode', body.code);",
+                      "  pm.expect(String(pm.collectionVariables.get('productId'))).to.eql(String(body.id));",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"{{demoName}}\",\n  \"code\": \"{{demoCode}}\",\n  \"category\": \"cloth\",\n  \"sizes\": [\"S\", \"M\"],\n  \"unit_price\": \"200.00\",\n  \"inventory\": 7,\n  \"colors\": [\"Red\", \"Blue\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ]
+                },
+                "description": "以七個可寫入欄位新增商品。`id` 由伺服器指派，未知欄位會被拒絕。`code` 由 collection 前置指令碼以亂數產生，避免與種子資料衝突。"
+              },
+              "response": []
+            },
+            {
+              "name": "Create product (delimited strings)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 201', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "});",
+                      "",
+                      "pm.test('Delimited sizes/colors normalise to sorted arrays', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.sizes).to.eql(['L', 'M', 'S']);",
+                      "  pm.expect(body.colors).to.eql(['Blue', 'Red']);",
+                      "});",
+                      "",
+                      "pm.test('Numeric and decimal strings normalise to a two-decimal string', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.unit_price).to.eql('199.50');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"{{demoName}} (string form)\",\n  \"code\": \"{{demoCode}}\",\n  \"category\": \"pants\",\n  \"sizes\": \"S、M、L\",\n  \"unit_price\": 199.5,\n  \"inventory\": 3,\n  \"colors\": \"Red，Blue\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ]
+                },
+                "description": "`sizes` / `colors` 也可用分隔字串（`、`、`,`、`，`）；`unit_price` 可用 JSON 數字或十進位字串。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Error cases",
+          "description": "驗證失敗 (422) 與代碼衝突 (409) 的契約。",
+          "item": [
+            {
+              "name": "Create product (duplicate code → 409)",
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// The duplicate-code check needs a code that already exists.",
+                      "// Reuse the one stored by \"Create product (JSON arrays)\"; fall back to",
+                      "// the seeded product code 'A-001' (run `python -m app.seed` first) so",
+                      "// this request still produces a conflict when run on its own.",
+                      "if (!pm.collectionVariables.get('createdCode')) {",
+                      "  pm.collectionVariables.set('createdCode', 'A-001');",
+                      "}"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 409', function () {",
+                      "  pm.response.to.have.status(409);",
+                      "});",
+                      "",
+                      "pm.test('Returns the documented conflict detail', function () {",
+                      "  pm.expect(pm.response.json()).to.eql({ detail: 'Product code already exists' });",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Duplicate attempt\",\n  \"code\": \"{{createdCode}}\",\n  \"category\": \"cloth\",\n  \"sizes\": [\"S\"],\n  \"unit_price\": \"10.00\",\n  \"inventory\": 1,\n  \"colors\": [\"Red\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ]
+                },
+                "description": "以已存在的 `code` 新增，預期 409。建議先執行 `Create product (JSON arrays)`。"
+              },
+              "response": []
+            },
+            {
+              "name": "Create product (invalid body → 422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 422', function () {",
+                      "  pm.response.to.have.status(422);",
+                      "});",
+                      "",
+                      "pm.test('Detail is the standard validation array', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.detail).to.be.an('array').that.is.not.empty;",
+                      "  body.detail.forEach(function (entry) {",
+                      "    pm.expect(entry).to.have.property('loc');",
+                      "    pm.expect(entry).to.have.property('msg');",
+                      "    pm.expect(entry).to.have.property('type');",
+                      "  });",
+                      "});",
+                      "",
+                      "pm.test('Never leaks a connection URL', function () {",
+                      "  pm.expect(pm.response.text()).to.not.include('://');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"id\": 1,\n  \"name\": \"Broken\",\n  \"code\": \"{{demoCode}}\",\n  \"category\": \"cloth\",\n  \"sizes\": [],\n  \"unit_price\": \"200.001\",\n  \"inventory\": 1,\n  \"colors\": [\"Red\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ]
+                },
+                "description": "包含未知欄位 `id`、空 `sizes` 與三位小數的 `unit_price`，預期 422。"
+              },
+              "response": []
+            },
+            {
+              "name": "Get product (invalid id → 422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 422', function () {",
+                      "  pm.response.to.have.status(422);",
+                      "});",
+                      "",
+                      "pm.test('Detail is the standard validation array', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.detail).to.be.an('array').that.is.not.empty;",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/abc",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "abc"
+                  ]
+                },
+                "description": "非整數的 id，預期 422。"
+              },
+              "response": []
+            },
+            {
+              "name": "List products (out-of-range limit → 422)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 422', function () {",
+                      "  pm.response.to.have.status(422);",
+                      "});",
+                      "",
+                      "pm.test('Detail points at the limit query parameter', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(body.detail).to.be.an('array').that.is.not.empty;",
+                      "  pm.expect(body.detail[0].loc).to.include('limit');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products?limit=101&offset=0",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "101",
+                      "description": "超過上限 100，預期 422"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                },
+                "description": "`limit=101` 超出 1–100 範圍，預期 422。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Read one",
+          "description": "讀取單筆商品（使用 Create 存入的 `productId`）。",
+          "item": [
+            {
+              "name": "Get product by id",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Content type is JSON', function () {",
+                      "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                      "});",
+                      "",
+                      "pm.test('Returns the requested product', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(String(body.id)).to.eql(String(pm.collectionVariables.get('productId')));",
+                      "  pm.expect(body).to.have.all.keys('id', 'name', 'code', 'category', 'sizes', 'unit_price', 'inventory', 'colors');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "{{productId}}"
+                  ]
+                },
+                "description": "依 id 讀取單筆商品。請先執行 `Create product (JSON arrays)`。"
+              },
+              "response": []
+            },
+            {
+              "name": "Get product by id (not found → 404)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 404', function () {",
+                      "  pm.response.to.have.status(404);",
+                      "});",
+                      "",
+                      "pm.test('Returns the documented not-found detail', function () {",
+                      "  pm.expect(pm.response.json()).to.eql({ detail: 'Product not found' });",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/999999",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "999999"
+                  ]
+                },
+                "description": "讀取不存在的 id，預期 404。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "description": "以 PUT 全部替換七個可寫入欄位；`id` 不變，缺少的 id 不會被建立。",
+          "item": [
+            {
+              "name": "Replace product (PUT)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Keeps the id and replaces every field', function () {",
+                      "  const body = pm.response.json();",
+                      "  pm.expect(String(body.id)).to.eql(String(pm.collectionVariables.get('productId')));",
+                      "  pm.expect(body.category).to.eql('pants');",
+                      "  pm.expect(body.sizes).to.eql(['L', 'XL']);",
+                      "  pm.expect(body.colors).to.eql(['Green']);",
+                      "  pm.expect(body.unit_price).to.eql('12.34');",
+                      "  pm.expect(body.inventory).to.eql(7);",
+                      "});",
+                      "",
+                      "pm.test('The replacement is persisted', function () {",
+                      "  pm.sendRequest({",
+                      "    url: pm.variables.replaceIn('{{baseUrl}}/api/v1/products/{{productId}}'),",
+                      "    method: 'GET'",
+                      "  }, function (err, res) {",
+                      "    pm.expect(err).to.be.null;",
+                      "    pm.expect(res.code).to.eql(200);",
+                      "    pm.expect(res.json()).to.eql(pm.response.json());",
+                      "  });",
+                      "});"
+                    ]
+                  }
+                },
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// The PUT target comes from the Create request; guard against a",
+                      "// missing value so the URL is never built as an empty path segment.",
+                      "pm.collectionVariables.set('productId', pm.collectionVariables.get('productId') || '1');"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"{{demoName}} (updated)\",\n  \"code\": \"{{demoCode}}\",\n  \"category\": \"pants\",\n  \"sizes\": [\"L\", \"XL\"],\n  \"unit_price\": \"12.34\",\n  \"inventory\": 7,\n  \"colors\": [\"Green\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "{{productId}}"
+                  ]
+                },
+                "description": "全部替換：七個欄位皆會被覆寫，**包含 `code`**。"
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "description": "刪除商品（204，無 body），之後讀取為 404。建議最後執行。",
+          "item": [
+            {
+              "name": "Delete product",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 204', function () {",
+                      "  pm.response.to.have.status(204);",
+                      "});",
+                      "",
+                      "pm.test('Body is empty', function () {",
+                      "  pm.expect(pm.response.text()).to.eql('');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "{{productId}}"
+                  ]
+                },
+                "description": "刪除商品與其關聯；共用屬性（分類／尺寸／顏色）會保留。"
+              },
+              "response": []
+            },
+            {
+              "name": "Get deleted product (→ 404)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status code is 404', function () {",
+                      "  pm.response.to.have.status(404);",
+                      "});",
+                      "",
+                      "pm.test('Returns the documented not-found detail', function () {",
+                      "  pm.expect(pm.response.json()).to.eql({ detail: 'Product not found' });",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/products/{{productId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "products",
+                    "{{productId}}"
+                  ]
+                },
+                "description": "確認刪除後該 id 不再存在，預期 404。"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level pre-request: prepares request data only (no assertions).",
+          "// Postman runs this before every request in the collection.",
+          "const hex = '0123456789abcdef';",
+          "let suffix = '';",
+          "for (let i = 0; i < 16; i += 1) {",
+          "  suffix += hex.charAt(Math.floor(Math.random() * 16));",
+          "}",
+          "// 'DEMO-' + 16 hex chars = 21 chars, inside the 32-char code limit, and",
+          "// distinct from the seeded codes (A-001/B-002), which avoids a 409.",
+          "pm.collectionVariables.set('demoCode', 'DEMO-' + suffix);",
+          "pm.collectionVariables.set('demoName', 'Demo ' + Date.now());"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8123",
+      "type": "string"
+    },
+    {
+      "key": "productId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "createdCode",
+      "value": "A-001",
+      "type": "string"
+    },
+    {
+      "key": "demoCode",
+      "value": "DEMO-0000000000000000",
+      "type": "string"
+    },
+    {
+      "key": "demoName",
+      "value": "Demo",
+      "type": "string"
+    }
+  ]
+}

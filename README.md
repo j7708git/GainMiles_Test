@@ -370,6 +370,23 @@ PostgreSQL 的整合測試。
 
 ## 10. AI 使用對話（附件）
 
-題目要求提供使用 AI 的完整對話。本 README 與 `docs/` 不取代完整對話。**交卷時
-應另附**經檢查的完整 AI 對話附件（涵蓋主要的規劃、研究與實作往來）；附件會在
-提交前檢查是否含個資或敏感資訊，且不在公開 repo 中收錄內部工作紀錄。
+題目要求提供使用 AI 的完整對話。本 repo 提供經確認可公開的
+[AI 對話快照 ZIP](submission/ai-conversation-snapshot.zip)，下載與範圍說明見
+[附件說明](submission/README.md)。本 README 與 `docs/` 不取代對話原文。
+
+附件涵蓋打包時的主對話、研究與實作子對話及相關畫面；它是**歷史快照**，
+不包含打包之後的回覆，也不是未刪減的原生 session 匯出。交卷前應確認是否需要
+更新對話，不能以現有快照宣稱包含所有未來往來。附件不含密碼檔、隱藏推理或原生工具全文；
+專案的權威進度筆記、私人設定與憑證不在公開 repo 中。
+
+## 11. Postman 操作檔案
+
+[postman/](postman/README.md) 提供 Collection v2.1 與本機環境設定，可在 Postman 匯入後
+測試商品 API。先依本頁啟動服務，再匯入下列兩個檔案並選擇 **GainMiles Local**：
+
+- [商品 API collection](postman/GainMiles-Product-API.postman_collection.json)
+- [本機 environment](postman/GainMiles-Local.postman_environment.json)
+
+預設 `baseUrl` 為 `http://127.0.0.1:8123`；若 API 使用其他埠，請同步修改這個變數。
+建議先建立 collection 的 demo 商品，再依其取得的 `productId` 執行更新與刪除，
+避免操作既有商品。完整匯入方式與執行順序見 [Postman 說明](postman/README.md)。
