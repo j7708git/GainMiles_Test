@@ -1,0 +1,5 @@
+# Development / test dependencies. Includes the runtime set so that
+# `pip install -r requirements-dev.txt` is enough for a full local setup.
+-r requirements.in
+pytest==9.0.1
+httpx==0.28.1

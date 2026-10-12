@@ -1,0 +1,16 @@
+# Alembic migrations
+
+Schema changes for the product API. The initial revision creates the six
+tables described in `docs/development-requirements.md` (products, categories,
+sizes, colors, product_sizes, product_colors).
+
+Run migrations from the project root (the URL is read from `.env`):
+
+    alembic upgrade head
+
+Generate a new revision from the models:
+
+    alembic revision --autogenerate -m "describe the change"
+
+Note: a healthy database container is not the same as a migrated database.
+Migrations run separately from `docker compose up`.

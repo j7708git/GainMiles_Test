@@ -1,0 +1,9 @@
+# Runtime dependencies (direct). Python 3.12 baseline.
+# SQLAlchemy stays on the 2.0 maintenance line (see docs/technical-decisions.md).
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+sqlalchemy==2.0.54
+psycopg[binary]==3.3.6
+alembic==1.20.0
+pydantic==2.14.1
+pydantic-settings==2.15.0

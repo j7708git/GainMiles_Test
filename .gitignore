@@ -1,0 +1,22 @@
+# Local configuration; the example is safe to track.
+.env
+.env.*
+!.env.example
+
+# Internal records and temporary output must not enter the public repo.
+.tmp/
+.scratch/
+.local/
+.openchamber/
+
+# Python environments and generated output.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
