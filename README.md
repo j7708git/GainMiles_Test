@@ -60,6 +60,8 @@ Python 套件版本已精確鎖定於 `requirements*.txt`（版本固定、`pip`
 ├── migrations/            # Alembic 遷移（初始 revision: 0001_initial）
 ├── tests/                 # 需要真 PostgreSQL 的整合測試與環境測試
 ├── docs/                  # 需求、技術決策、備案、架構圖
+├── postman/               # Postman collection 與本機 environment（§11）
+├── submission/            # 交卷附件：AI 對話快照 ZIP 與說明（§10）
 ├── alembic.ini
 ├── compose.yaml           # db 與 test profile 的 db_test
 ├── requirements.txt       # 執行期依賴（鎖定）
@@ -374,7 +376,7 @@ PostgreSQL 的整合測試。
 [AI 對話快照 ZIP](submission/ai-conversation-snapshot.zip)，下載與範圍說明見
 [附件說明](submission/README.md)。本 README 與 `docs/` 不取代對話原文。
 
-附件涵蓋打包時的主對話、研究與實作子對話及相關畫面；它是**歷史快照**，
+附件涵蓋打包時的主對話、研究與實作子對話、2026-10-13 的總體審查對話及相關畫面；它是**歷史快照**，
 不包含打包之後的回覆，也不是未刪減的原生 session 匯出。交卷前應確認是否需要
 更新對話，不能以現有快照宣稱包含所有未來往來。附件不含密碼檔、隱藏推理或原生工具全文；
 專案的權威進度筆記、私人設定與憑證不在公開 repo 中。
